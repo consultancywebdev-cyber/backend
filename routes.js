@@ -286,33 +286,74 @@ router.delete('/classes/:id', requireAuth, async (req, res) => {
   }
 });
 
-// ===================== BLOGS =====================
-// Admin → ALL; Public → only isPublished
+/// ===================== BLOGS =====================
+
+/**
+ * Public list:
+ * - If user is NOT logged in -> only published posts
+ * - If user IS logged in (admin session) -> return all posts (drafts + published)
+ */
 router.get('/blogs', async (req, res) => {
   try {
-    const query = req.session?.adminId ? {} : { isPublished: true };
-    const blogs = await Blog.find(query).sort({ createdAt: -1 });
+    const isAdmin = !!req.session?.adminId;
+    const filter = isAdmin ? {} : { isPublished: true };
+    const blogs = await Blog.find(filter).sort({ createdAt: -1 });
     res.json(blogs);
-  } catch {
+  } catch (e) {
     res.status(500).json({ message: 'Failed to fetch blogs' });
   }
 });
 
+/**
+ * Create blog (admin)
+ * Frontend already sends: title, slug, excerpt, content, imageUrl, category, author,
+ * isPublished (boolean), and publishedAt (ISO string or null).
+ * We also set publishedAt automatically if isPublished=true and publishedAt missing.
+ */
 router.post('/blogs', requireAuth, async (req, res) => {
   try {
-    const blog = new Blog(req.body);
+    const payload = { ...req.body };
+
+    if (payload.isPublished && !payload.publishedAt) {
+      payload.publishedAt = new Date();
+    }
+    // Basic guard: require title + slug
+    if (!payload.title || !payload.slug) {
+      return res.status(400).json({ message: 'Title and slug are required' });
+    }
+
+    const blog = new Blog(payload);
     await blog.save();
     res.json(blog);
-  } catch {
+  } catch (e) {
+    // handle duplicate slug nicely
+    if (e?.code === 11000 && e?.keyPattern?.slug) {
+      return res.status(400).json({ message: 'Slug already exists. Use a different title.' });
+    }
     res.status(400).json({ message: 'Failed to create blog' });
   }
 });
 
+/**
+ * Update blog (admin)
+ * Auto-fill publishedAt when switching from draft -> published without a timestamp
+ */
 router.put('/blogs/:id', requireAuth, async (req, res) => {
   try {
-    const blog = await Blog.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const update = { ...req.body };
+
+    // If publishing now and no publishedAt, set it
+    if (update.isPublished === true && !update.publishedAt) {
+      update.publishedAt = new Date();
+    }
+
+    const blog = await Blog.findByIdAndUpdate(req.params.id, update, { new: true });
     res.json(blog);
-  } catch {
+  } catch (e) {
+    // handle duplicate slug on update
+    if (e?.code === 11000 && e?.keyPattern?.slug) {
+      return res.status(400).json({ message: 'Slug already exists. Use a different title.' });
+    }
     res.status(400).json({ message: 'Failed to update blog' });
   }
 });
