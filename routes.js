@@ -1,3 +1,4 @@
+// backend/routes.js
 const express = require('express');
 const bcrypt = require('bcrypt');
 const router = express.Router();
@@ -32,7 +33,7 @@ router.post('/auth/login', async (req, res) => {
     if (!validPassword) return res.status(401).json({ message: 'Invalid credentials' });
 
     req.session.adminId = admin._id.toString();
-    res.json({ success: true });
+    res.json({ success: true, message: 'Logged in' });
   } catch (error) {
     res.status(500).json({ message: 'Login failed' });
   }
@@ -41,12 +42,20 @@ router.post('/auth/login', async (req, res) => {
 router.post('/auth/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ message: 'Logout failed' });
-    res.json({ success: true });
+    res.json({ success: true, message: 'Logged out' });
   });
 });
 
+// Frontend guard expects /api/auth/me. Keep /auth/check too.
 router.get('/auth/check', (req, res) => {
   res.json({ authenticated: !!req.session?.adminId });
+});
+
+router.get('/auth/me', (req, res) => {
+  if (req.session?.adminId) {
+    return res.json({ id: req.session.adminId });
+  }
+  return res.status(401).json({ message: 'Unauthorized' });
 });
 
 // ===================== SETTINGS =====================
@@ -78,9 +87,11 @@ router.put('/settings', requireAuth, async (req, res) => {
 });
 
 // ===================== SLIDERS =====================
-router.get('/sliders', async (_req, res) => {
+// Admin → ALL; Public → only isActive
+router.get('/sliders', async (req, res) => {
   try {
-    const sliders = await Slider.find({ isActive: true }).sort({ order: 1 });
+    const query = req.session?.adminId ? {} : { isActive: true };
+    const sliders = await Slider.find(query).sort({ order: 1 });
     res.json(sliders);
   } catch {
     res.status(500).json({ message: 'Failed to fetch sliders' });
@@ -116,9 +127,11 @@ router.delete('/sliders/:id', requireAuth, async (req, res) => {
 });
 
 // ===================== UNIVERSITIES =====================
-router.get('/universities', async (_req, res) => {
+// Admin → ALL; Public → only isActive
+router.get('/universities', async (req, res) => {
   try {
-    const universities = await University.find({ isActive: true });
+    const query = req.session?.adminId ? {} : { isActive: true };
+    const universities = await University.find(query);
     res.json(universities);
   } catch {
     res.status(500).json({ message: 'Failed to fetch universities' });
@@ -154,9 +167,11 @@ router.delete('/universities/:id', requireAuth, async (req, res) => {
 });
 
 // ===================== COURSES =====================
-router.get('/courses', async (_req, res) => {
+// Admin → ALL; Public → only isActive
+router.get('/courses', async (req, res) => {
   try {
-    const courses = await Course.find({ isActive: true });
+    const query = req.session?.adminId ? {} : { isActive: true };
+    const courses = await Course.find(query);
     res.json(courses);
   } catch {
     res.status(500).json({ message: 'Failed to fetch courses' });
@@ -192,9 +207,11 @@ router.delete('/courses/:id', requireAuth, async (req, res) => {
 });
 
 // ===================== DESTINATIONS =====================
-router.get('/destinations', async (_req, res) => {
+// Admin → ALL; Public → only isActive
+router.get('/destinations', async (req, res) => {
   try {
-    const destinations = await Destination.find({ isActive: true });
+    const query = req.session?.adminId ? {} : { isActive: true };
+    const destinations = await Destination.find(query);
     res.json(destinations);
   } catch {
     res.status(500).json({ message: 'Failed to fetch destinations' });
@@ -230,9 +247,11 @@ router.delete('/destinations/:id', requireAuth, async (req, res) => {
 });
 
 // ===================== CLASSES =====================
-router.get('/classes', async (_req, res) => {
+// Admin → ALL; Public → only isActive
+router.get('/classes', async (req, res) => {
   try {
-    const classes = await Class.find({ isActive: true });
+    const query = req.session?.adminId ? {} : { isActive: true };
+    const classes = await Class.find(query);
     res.json(classes);
   } catch {
     res.status(500).json({ message: 'Failed to fetch classes' });
@@ -268,9 +287,11 @@ router.delete('/classes/:id', requireAuth, async (req, res) => {
 });
 
 // ===================== BLOGS =====================
-router.get('/blogs', async (_req, res) => {
+// Admin → ALL; Public → only isPublished
+router.get('/blogs', async (req, res) => {
   try {
-    const blogs = await Blog.find({ isPublished: true }).sort({ createdAt: -1 });
+    const query = req.session?.adminId ? {} : { isPublished: true };
+    const blogs = await Blog.find(query).sort({ createdAt: -1 });
     res.json(blogs);
   } catch {
     res.status(500).json({ message: 'Failed to fetch blogs' });
@@ -306,9 +327,11 @@ router.delete('/blogs/:id', requireAuth, async (req, res) => {
 });
 
 // ===================== REVIEWS =====================
-router.get('/reviews', async (_req, res) => {
+// Admin → ALL; Public → only isApproved
+router.get('/reviews', async (req, res) => {
   try {
-    const reviews = await Review.find({ isApproved: true }).sort({ createdAt: -1 });
+    const query = req.session?.adminId ? {} : { isApproved: true };
+    const reviews = await Review.find(query).sort({ createdAt: -1 });
     res.json(reviews);
   } catch {
     res.status(500).json({ message: 'Failed to fetch reviews' });
@@ -344,7 +367,7 @@ router.delete('/reviews/:id', requireAuth, async (req, res) => {
 });
 
 // ===================== APPOINTMENTS =====================
-// List (admin only)
+// Admin list (protected)
 router.get('/appointments', requireAuth, async (_req, res) => {
   try {
     const appointments = await Appointment.find().sort({ createdAt: -1 });
@@ -357,7 +380,6 @@ router.get('/appointments', requireAuth, async (_req, res) => {
 // Create (public)
 router.post('/appointments', async (req, res) => {
   try {
-    // Accept both "name" and "fullName" from client and map to schema's "name"
     const {
       name,
       fullName,
@@ -366,7 +388,7 @@ router.post('/appointments', async (req, res) => {
       preferredDate,
       preferredTime = '',
       message = '',
-      status, // ignored on create; schema default is pending
+      // status ignored on create (defaults to pending)
     } = req.body || {};
 
     const finalName = (name || fullName || '').toString().trim();
@@ -381,10 +403,8 @@ router.post('/appointments', async (req, res) => {
       preferredDate: preferredDate ? String(preferredDate) : '',
       preferredTime: String(preferredTime || ''),
       message: String(message || ''),
-      // status left to default
     });
 
-    // Use 201 for creation
     return res.status(201).json(doc);
   } catch (error) {
     console.error('Failed to create appointment:', error);
@@ -431,6 +451,5 @@ router.delete('/appointments/:id', requireAuth, async (req, res) => {
     res.status(400).json({ message: 'Failed to delete appointment' });
   }
 });
-
 
 module.exports = router;
