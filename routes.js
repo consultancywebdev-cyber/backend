@@ -13,6 +13,8 @@ const Class = require('./models/Class');
 const Blog = require('./models/Blog');
 const Review = require('./models/Review');
 const Appointment = require('./models/Appointment');
+const Team = require('./models/Team');
+
 
 // ---------- Auth middleware ----------
 const requireAuth = (req, res, next) => {
@@ -125,6 +127,65 @@ router.delete('/sliders/:id', requireAuth, async (req, res) => {
     res.status(400).json({ message: 'Failed to delete slider' });
   }
 });
+// ===================== TEAM =====================
+// Public: list active (for About page)
+router.get('/team', async (_req, res) => {
+  try {
+    const list = await Team.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ message: 'Failed to fetch team' });
+  }
+});
+
+// Admin: list ALL (including inactive) — optional helper for admin UIs
+router.get('/team/all', requireAuth, async (_req, res) => {
+  try {
+    const list = await Team.find().sort({ order: 1, createdAt: -1 });
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ message: 'Failed to fetch team (all)' });
+  }
+});
+
+// Admin: create
+router.post('/team', requireAuth, async (req, res) => {
+  try {
+    const { name, position, imageUrl = '', order = 0, isActive = true } = req.body || {};
+    if (!name || !position) {
+      return res.status(400).json({ message: 'name and position are required' });
+    }
+    const doc = await Team.create({ name, position, imageUrl, order, isActive });
+    res.status(201).json(doc);
+  } catch (e) {
+    res.status(400).json({ message: 'Failed to create team member' });
+  }
+});
+
+// Admin: update
+router.put('/team/:id', requireAuth, async (req, res) => {
+  try {
+    const update = {};
+    ['name', 'position', 'imageUrl', 'order', 'isActive'].forEach((k) => {
+      if (req.body?.[k] !== undefined) update[k] = req.body[k];
+    });
+    const doc = await Team.findByIdAndUpdate(req.params.id, update, { new: true });
+    res.json(doc);
+  } catch (e) {
+    res.status(400).json({ message: 'Failed to update team member' });
+  }
+});
+
+// Admin: delete
+router.delete('/team/:id', requireAuth, async (req, res) => {
+  try {
+    await Team.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(400).json({ message: 'Failed to delete team member' });
+  }
+});
+
 
 // ===================== UNIVERSITIES =====================
 // Admin → ALL; Public → only isActive
